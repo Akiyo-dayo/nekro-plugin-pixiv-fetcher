@@ -38,7 +38,24 @@ def parse_code(callback_url: str) -> str:
     query = urllib.parse.parse_qs(parsed.query)
     code = query.get("code", [""])[0]
     if not code:
-        raise SystemExit("No code= parameter found in the pasted URL.")
+        return_to = query.get("return_to", [""])[0]
+        if return_to:
+            decoded = urllib.parse.unquote(return_to)
+            decoded_query = urllib.parse.parse_qs(urllib.parse.urlparse(decoded).query)
+            nested_code = decoded_query.get("code", [""])[0]
+            if nested_code:
+                return nested_code
+            raise SystemExit(
+                "The pasted URL is an intermediate Pixiv account redirect, not the final callback URL.\n"
+                "Open this decoded return_to URL, finish login/authorization, then paste the final URL that contains code=...\n\n"
+                f"Decoded return_to:\n{decoded}",
+            )
+        raise SystemExit(
+            "No code= parameter found in the pasted URL.\n"
+            "You need the final URL after Pixiv login/authorization, usually something like:\n"
+            "https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=...\n"
+            "If the URL starts with https://accounts.pixiv.net/post-redirect, it is still an intermediate page.",
+        )
     return code
 
 
