@@ -129,6 +129,12 @@ pixiv_search_and_fetch(tags=["風景"], count=1, size="original", delivery="zip"
 pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="daily", ranking_position=1, count=1)
 ```
 
+获取 Pixiv 日榜第一原图：
+
+```python
+pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="daily", ranking_position=1, count=1, size="original", delivery="zip")
+```
+
 获取 Pixiv 周榜前三：
 
 ```python
@@ -161,6 +167,8 @@ pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="weekly", ranking_p
 4. 将 `refresh_token` 填入 WebUI 插件配置 `PIXIV_REFRESH_TOKEN`，后续由插件自动刷新 access token。
 
 登录态启用后，插件会优先使用 Pixiv App API 搜索、排行榜和作品图片 URL；如果登录态刷新失败、接口暂时不可用或 token 失效，会记录日志并退回免登录公开接口。
+
+免登录排行榜接口默认只提供 `master1200` 预览图。插件在 `size="original"` 时会额外查询 Pixiv 公开作品详情里的 `urls.original`，公开作品可用时会下载原图；若公开详情拿不到原图，才退回预览图。登录态 App API 的原图链路更稳定。
 
 ## 部署方式
 

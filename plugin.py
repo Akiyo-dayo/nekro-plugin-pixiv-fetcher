@@ -445,6 +445,37 @@ async def _search_pixiv(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return items
 
 
+async def _public_original_url(pid: Any) -> str:
+    if not pid:
+        return ""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+        ),
+        "Referer": f"https://www.pixiv.net/artworks/{pid}",
+        "Accept": "application/json,text/plain,*/*",
+    }
+    last_error: Exception | None = None
+    for proxy in _proxy_candidates():
+        try:
+            async with httpx.AsyncClient(timeout=config.TIMEOUT_SECONDS, proxy=proxy, follow_redirects=True) as client:
+                response = await client.get(f"https://www.pixiv.net/ajax/illust/{pid}", headers=headers)
+                response.raise_for_status()
+                data = response.json()
+            body = data.get("body") or {}
+            original = (body.get("urls") or {}).get("original") or ""
+            return str(original)
+        except Exception as exc:
+            last_error = exc
+            if proxy:
+                logger.warning(f"Pixiv 公开原图详情代理请求失败，改用直连重试: {exc!s}")
+                continue
+            logger.warning(f"Pixiv 公开原图详情获取失败: pid={pid}, error={last_error!s}")
+            return ""
+    return ""
+
+
 async def _search_pixiv_app(
     *,
     tags: List[str],
@@ -489,7 +520,7 @@ async def _search_pixiv_app(
     return items[:requested_count]
 
 
-async def _search_pixiv_ranking(ranking_mode: str, ranking_position: int, count: int) -> List[Dict[str, Any]]:
+async def _search_pixiv_ranking(ranking_mode: str, ranking_position: int, count: int, size: str) -> List[Dict[str, Any]]:
     mode = (ranking_mode or "daily").strip().lower()
     if mode == "week":
         mode = "weekly"
@@ -541,9 +572,13 @@ async def _search_pixiv_ranking(ranking_mode: str, ranking_position: int, count:
         is_r18 = bool(content_type.get("sexual"))
         if (is_r18 or _has_r18_tag(item)) and not config.ALLOW_R18:
             continue
+        pid = item.get("illust_id")
+        image_url = item.get("url")
+        if _normalize_size(size) == "original":
+            image_url = await _public_original_url(pid) or image_url
         ranked_items.append(
             {
-                "pid": item.get("illust_id"),
+                "pid": pid,
                 "p": 0,
                 "uid": item.get("user_id"),
                 "title": item.get("title"),
@@ -557,7 +592,7 @@ async def _search_pixiv_ranking(ranking_mode: str, ranking_position: int, count:
                 "rank": rank,
                 "rating_count": item.get("rating_count"),
                 "view_count": item.get("view_count"),
-                "urls": {"regular": item.get("url"), "original": item.get("url")},
+                "urls": {"regular": item.get("url"), "original": image_url},
             },
         )
         if len(ranked_items) >= wanted:
@@ -701,9 +736,9 @@ async def pixiv_search_and_fetch(
                     items = await _search_pixiv_ranking_app(active_ranking_mode, active_ranking_position, count, active_size)
                 except Exception as login_exc:
                     logger.warning(f"Pixiv 登录态排行榜失败，退回免登录公开排行榜: {login_exc!s}")
-                    items = await _search_pixiv_ranking(active_ranking_mode, active_ranking_position, count)
+                    items = await _search_pixiv_ranking(active_ranking_mode, active_ranking_position, count, active_size)
             else:
-                items = await _search_pixiv_ranking(active_ranking_mode, active_ranking_position, count)
+                items = await _search_pixiv_ranking(active_ranking_mode, active_ranking_position, count, active_size)
         except Exception as exc:
             logger.exception("Pixiv 排行榜获取失败")
             return f"[Pixiv] 排行榜获取失败: {exc!s}"
