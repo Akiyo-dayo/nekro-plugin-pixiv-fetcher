@@ -161,10 +161,10 @@ pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="weekly", ranking_p
 
 推荐的凭证获取流程：
 
-1. 在受信任的本机或服务器上运行一次性 Pixiv OAuth 登录辅助脚本：`python get_pixiv_refresh_token.py`。
+1. 使用成熟的外部 Pixiv OAuth token 工具获取 `refresh_token`，例如 `eggplants/get-pixivpy-token` 或其他 PixivPy 社区工具。
 2. 浏览器打开授权页面，由账号本人完成登录和授权。
-3. 辅助脚本接收回调 code 并换取 `refresh_token`。
-4. 将 `refresh_token` 填入 WebUI 插件配置 `PIXIV_REFRESH_TOKEN`，后续由插件自动刷新 access token。
+3. 工具成功输出 `refresh_token` 后，将它填入 WebUI 插件配置 `PIXIV_REFRESH_TOKEN`。
+4. 后续由插件在运行时自动刷新短期 access token。
 
 登录态启用后，插件会优先使用 Pixiv App API 搜索、排行榜和作品图片 URL；如果登录态刷新失败、接口暂时不可用或 token 失效，会记录日志并退回免登录公开接口。
 
