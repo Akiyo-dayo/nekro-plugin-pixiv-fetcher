@@ -250,6 +250,13 @@ def _is_safe_item(item: Dict[str, Any]) -> bool:
     return not bool(item.get("r18")) and not _has_r18_tag(item)
 
 
+def _is_ai_generated_item(item: Dict[str, Any]) -> bool:
+    ai_type = item.get("aiType")
+    if isinstance(ai_type, str):
+        ai_type = ai_type.strip().lower()
+    return ai_type in (2, "2", "ai", "generated", "ai_generated")
+
+
 def _config_mode(value: str) -> str:
     return (value or config.DEFAULT_MODE or "search").strip().lower()
 
@@ -516,7 +523,7 @@ async def _search_pixiv_app(
     elif requested_r18 == 1:
         items = [item for item in items if bool(item.get("r18")) or _has_r18_tag(item)]
     if not include_ai:
-        items = [item for item in items if item.get("aiType") in (0, None, "unknown")]
+        items = [item for item in items if not _is_ai_generated_item(item)]
     return items[:requested_count]
 
 
