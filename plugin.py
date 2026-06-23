@@ -9,11 +9,9 @@ directory and returns sandbox-visible file paths for follow-up sending.
 from __future__ import annotations
 
 import hashlib
-import io
 import re
 import time
 import urllib.parse
-import zipfile
 from typing import Any, Dict, List
 
 from pydantic import Field
@@ -136,14 +134,14 @@ class PixivFetcherConfig(ConfigBase):
     ORIGINAL_ZIP_THRESHOLD_MB: int = Field(
         default=20,
         title="原图自动打包阈值(MB)",
-        description="size=original 且 delivery=auto 时，超过该大小会打包为 zip 文件发送，避免平台按图片消息压缩或拦截。",
+        description="兼容旧配置项；当前版本不再自动打包 zip。",
         ge=1,
         le=200,
     )
     DEFAULT_DELIVERY: str = Field(
-        default="auto",
+        default="image",
         title="默认交付方式",
-        description="auto 自动判断；image 直接作为图片文件；zip 打包原图为 zip 文件。",
+        description="兼容旧配置项；当前版本始终返回图片文件路径，不再打包 zip。",
     )
 
 
@@ -278,24 +276,7 @@ def _config_ranking_position(value: int) -> int:
 
 
 def _config_delivery(value: str) -> str:
-    delivery = (value or config.DEFAULT_DELIVERY or "auto").strip().lower()
-    return delivery if delivery in {"auto", "image", "zip"} else "auto"
-
-
-def _should_zip_original(*, delivery: str, size: str, image_bytes: bytes) -> bool:
-    if delivery == "zip":
-        return True
-    if delivery == "image":
-        return False
-    threshold = max(1, config.ORIGINAL_ZIP_THRESHOLD_MB) * 1024 * 1024
-    return _normalize_size(size) == "original" and len(image_bytes) >= threshold
-
-
-def _zip_image_bytes(image_bytes: bytes, image_name: str) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(image_name, image_bytes)
-    return buffer.getvalue()
+    return "image"
 
 
 async def _request_json(method: str, url: str, *, headers: Dict[str, str], **kwargs: Any) -> Dict[str, Any]:
@@ -675,20 +656,6 @@ async def _download_image(url: str) -> bytes:
     return content
 
 
-def _format_result(index: int, item: Dict[str, Any], sandbox_path: str) -> str:
-    tags = ", ".join([str(tag) for tag in item.get("tags", [])[:8]])
-    pixiv_url = f"https://www.pixiv.net/artworks/{item.get('pid')}"
-    return (
-        f"{index}. {item.get('title') or 'Untitled'}\n"
-        f"   pid: {item.get('pid')} | page: {item.get('p', 0)} | author: {item.get('author')} ({item.get('uid')})\n"
-        f"   size: {item.get('width')}x{item.get('height')} | r18: {bool(item.get('r18'))} | aiType: {item.get('aiType')}\n"
-        f"   rank: {item.get('rank', 'N/A')} | views: {item.get('view_count', 'N/A')} | ratings: {item.get('rating_count', 'N/A')}\n"
-        f"   tags: {tags or '无'}\n"
-        f"   pixiv: {pixiv_url}\n"
-        f"   file: {sandbox_path}"
-    )
-
-
 @plugin.mount_sandbox_method(
     SandboxMethodType.TOOL,
     name="pixiv_search_and_fetch",
@@ -724,7 +691,7 @@ async def pixiv_search_and_fetch(
         r18: 内容策略。safe/全年龄 只搜索全年龄；adult/r18 只搜索 R18；mixed/all 混合。插件配置 ALLOW_R18=false 时会强制 safe。
         size: 图片尺寸，regular 或 original。默认 regular；original 可能更慢且体积更大。
         include_ai: 是否允许 AI 作品。默认按配置排除。
-        delivery: 交付方式。auto 自动判断；image 直接作为图片文件；zip 打包原图为 zip 文件，适合用户必须要原图但平台图片消息传不过去的场景。
+        delivery: 兼容旧参数，当前版本始终返回图片文件路径，不再打包 zip。
 
     Returns:
         str: 搜索和下载结果。每条结果包含作品元数据、Pixiv 链接和可发送文件路径。
@@ -735,7 +702,7 @@ async def pixiv_search_and_fetch(
     active_r18 = _config_r18(r18)
     active_size = _normalize_size(size or config.DEFAULT_SIZE)
     active_include_ai = _config_include_ai(include_ai)
-    active_delivery = _config_delivery(delivery)
+    _config_delivery(delivery)
     if active_mode == "ranking":
         try:
             if config.PIXIV_REFRESH_TOKEN.strip():
@@ -808,13 +775,8 @@ async def pixiv_search_and_fetch(
             ext = item.get("ext") or "jpg"
             seed = f"{item.get('pid')}_{item.get('p', 0)}_{hashlib.md5(url.encode()).hexdigest()[:8]}"
             image_name = f"pixiv_{_safe_filename_part(seed, 'artwork')}.{_safe_filename_part(ext, 'jpg')}"
-            if _should_zip_original(delivery=active_delivery, size=target_size, image_bytes=image_bytes):
-                image_bytes = _zip_image_bytes(image_bytes, image_name)
-                file_name = f"{image_name}.zip"
-                use_suffix = ".zip"
-            else:
-                file_name = image_name
-                use_suffix = f".{ext}"
+            file_name = image_name
+            use_suffix = f".{ext}"
             _, saved_name = await download_file_from_bytes(
                 image_bytes,
                 file_name=file_name,
@@ -822,7 +784,7 @@ async def pixiv_search_and_fetch(
                 from_chat_key=_ctx.chat_key,
             )
             sandbox_path = str(convert_filename_to_sandbox_upload_path(saved_name))
-            results.append(_format_result(len(results) + 1, item, sandbox_path))
+            results.append(sandbox_path)
         except Exception as exc:
             logger.exception(f"Pixiv 图片下载失败: pid={item.get('pid')}")
             failures.append(f"pid={item.get('pid')}: {exc!s}")
@@ -830,14 +792,9 @@ async def pixiv_search_and_fetch(
     if not results:
         return "[Pixiv] 找到了作品，但图片下载全部失败。\n" + "\n".join(failures)
 
-    summary = [
-        "[Pixiv] 已获取图片，可直接将 file 路径交给 send_msg_file 发送。",
-        f"搜索条件: mode={active_mode}, tags={payload.get('tag', [])}, uid={uid or '不限'}, r18={payload.get('r18', 'N/A')}, size={target_size}, delivery={active_delivery}, count={len(results)}",
-        "",
-        "\n\n".join(results),
-    ]
+    summary = results[:]
     if failures:
-        summary.extend(["", "部分失败:", "\n".join(failures)])
+        summary.append(f"[Pixiv] 部分图片下载失败: {len(failures)}")
     return "\n".join(summary)
 
 

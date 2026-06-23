@@ -14,7 +14,7 @@
 - 支持控制获取数量、图片尺寸、R18 策略、是否包含 AI 作品。
 - 默认只检索全年龄内容，并默认排除 AI 作品。
 - 下载图片时使用 Pixiv Referer 与浏览器 User-Agent，提升图片代理链路的兼容性。
-- 返回作品标题、PID、页码、作者、尺寸、标签、Pixiv 链接和本地可发送文件路径。
+- 成功时仅返回本地可发送文件路径，减少 Agent 误把调试摘要发送给用户的概率。
 - 下载文件保存到当前聊天频道的上传目录，不污染其他聊天上下文。
 
 ## 插件信息
@@ -59,18 +59,13 @@ pixiv_search_and_fetch(
 | `r18` | `str` | `""` | 内容策略。空值时使用 WebUI 配置 `DEFAULT_R18_MODE`；`safe`/`全年龄` 只取全年龄；`adult`/`r18` 只取 R18；`mixed`/`all` 混合。若配置 `ALLOW_R18=false`，会强制全年龄。 |
 | `size` | `str` | `""` | 图片尺寸。空值时使用 WebUI 配置 `DEFAULT_SIZE`；`regular` 更稳定；`original` 获取原图，体积更大、速度更慢。 |
 | `include_ai` | `bool \| None` | `None` | 是否允许 AI 作品。`None` 时使用 WebUI 配置 `DEFAULT_INCLUDE_AI`。 |
-| `delivery` | `str` | `""` | 交付方式。空值时使用 WebUI 配置 `DEFAULT_DELIVERY`；`auto` 自动判断；`image` 直接交付图片文件；`zip` 将原图打包为 zip 文件。 |
+| `delivery` | `str` | `""` | 兼容旧参数。当前版本始终返回图片文件路径，不再打包 zip。 |
 
 ### 返回格式
 
-成功时返回文本摘要，每条结果包含：
+成功时仅返回一行或多行 `/app/uploads/...` 文件路径。
 
-- Pixiv 作品标题、PID、页码和作者 UID。
-- 图片尺寸、R18 标记、AI 类型。
-- 主要标签和 Pixiv 原作品链接。
-- 已下载图片的 `/app/uploads/...` 文件路径。
-
-Agent 获取返回后，应将 `file` 字段中的路径交给基础交互插件的 `send_msg_file` 发送。
+Agent 获取返回后，应直接将这些路径交给基础交互插件的 `send_msg_file` 发送，不应把工具返回内容原样转述给用户。
 
 ## 配置项
 
@@ -88,8 +83,8 @@ Agent 获取返回后，应将 `file` 字段中的路径交给基础交互插件
 | `DEFAULT_R18_MODE` | `safe` | WebUI 默认 R18 策略。 |
 | `DEFAULT_INCLUDE_AI` | `false` | WebUI 默认是否允许 AI 作品。 |
 | `PIXIV_REFRESH_TOKEN` | 空 | 可选 secret。填写后优先使用 Pixiv 登录态 App API；留空则使用免登录公开接口。 |
-| `ORIGINAL_ZIP_THRESHOLD_MB` | `20` | `size=original` 且 `delivery=auto` 时，超过该大小会自动打包为 zip。 |
-| `DEFAULT_DELIVERY` | `auto` | 默认交付方式。`auto` 自动判断；`image` 直接交付图片；`zip` 打包为文件。 |
+| `ORIGINAL_ZIP_THRESHOLD_MB` | `20` | 兼容旧配置项；当前版本不再自动打包 zip。 |
+| `DEFAULT_DELIVERY` | `image` | 兼容旧配置项；当前版本始终返回图片文件路径。 |
 
 ## 使用示例
 
@@ -117,12 +112,6 @@ pixiv_search_and_fetch(tags=[], uid=123456, count=1)
 pixiv_search_and_fetch(tags=["風景"], count=1, size="original")
 ```
 
-用户必须要原图，但平台图片消息传不过去时，改用 zip 文件交付：
-
-```python
-pixiv_search_and_fetch(tags=["風景"], count=1, size="original", delivery="zip")
-```
-
 获取 Pixiv 日榜第一：
 
 ```python
@@ -132,7 +121,7 @@ pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="daily", ranking_po
 获取 Pixiv 日榜第一原图：
 
 ```python
-pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="daily", ranking_position=1, count=1, size="original", delivery="zip")
+pixiv_search_and_fetch(tags=[], mode="ranking", ranking_mode="daily", ranking_position=1, count=1, size="original")
 ```
 
 获取 Pixiv 周榜前三：
@@ -208,10 +197,9 @@ plugins/packages/nekro_plugin_pixiv_fetcher/
 
 ### 用户必须要原图但平台发不出去
 
-- 不要改发压缩图，也不要偷偷降到 `regular`。
-- 使用 `size="original", delivery="zip"`，让插件把原图打包成 zip 文件路径。
-- 让 Agent 使用 `send_msg_file` 发送这个 zip 文件。这样平台会更倾向于按普通文件处理，避免图片消息压缩、转码或尺寸限制。
-- 如果 zip 文件仍超过平台单文件上限，只能拆分、换文件传输渠道，或让用户通过服务器/对象存储下载；插件不会伪装成已发送成功。
+- 插件会按 `size="original"` 下载原图文件，但当前版本不再打包 zip。
+- 如果聊天平台仍压缩、转码或拒绝大图，只能换文件传输渠道、对象存储下载，或由上层发送逻辑支持真正的文件上传。
+- 插件不会偷偷降到 `regular`，也不会伪装成已发送成功。
 
 ## 验收标准
 
@@ -221,5 +209,5 @@ plugins/packages/nekro_plugin_pixiv_fetcher/
 - 插件目录存在于目标实例的 `plugins/packages` 下。
 - `PLUGIN_ENABLED` 已加入 `Akiyo_dayo.nekro_plugin_pixiv_fetcher`。
 - 重启后目标 NA 实例 `/api/health` 返回 `{"ok": true}`。
-- 工具实际调用可以返回至少一条 Pixiv 元数据与 `/app/uploads/...` 文件路径。
+- 工具实际调用可以返回至少一条 `/app/uploads/...` 文件路径。
 - `mode="ranking", ranking_mode="daily", ranking_position=1` 可以获取 Pixiv 公开日榜第一。
