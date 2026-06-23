@@ -1,4 +1,8 @@
-# Pixiv 图片搜索获取插件
+<p align="center">
+  <img src="assets/logo.png" alt="Pixiv图片搜索获取 Logo" width="180">
+</p>
+
+# Pixiv图片搜索获取
 
 面向 Nekro Agent 的 Pixiv/P站图片检索与获取插件。插件通过 Lolicon API v2 检索 Pixiv 作品元数据，按调用条件下载图片到当前聊天的上传目录，并返回可直接交给 `send_msg_file` 使用的 `/app/uploads/...` 路径。
 
