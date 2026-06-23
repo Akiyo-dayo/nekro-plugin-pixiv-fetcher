@@ -41,6 +41,7 @@ pixiv_search_and_fetch(
     r18: str = "",
     size: str = "",
     include_ai: bool | None = None,
+    delivery: str = "",
 ) -> str
 ```
 
@@ -58,6 +59,7 @@ pixiv_search_and_fetch(
 | `r18` | `str` | `""` | 内容策略。空值时使用 WebUI 配置 `DEFAULT_R18_MODE`；`safe`/`全年龄` 只取全年龄；`adult`/`r18` 只取 R18；`mixed`/`all` 混合。若配置 `ALLOW_R18=false`，会强制全年龄。 |
 | `size` | `str` | `""` | 图片尺寸。空值时使用 WebUI 配置 `DEFAULT_SIZE`；`regular` 更稳定；`original` 获取原图，体积更大、速度更慢。 |
 | `include_ai` | `bool \| None` | `None` | 是否允许 AI 作品。`None` 时使用 WebUI 配置 `DEFAULT_INCLUDE_AI`。 |
+| `delivery` | `str` | `""` | 交付方式。空值时使用 WebUI 配置 `DEFAULT_DELIVERY`；`auto` 自动判断；`image` 直接交付图片文件；`zip` 将原图打包为 zip 文件。 |
 
 ### 返回格式
 
@@ -86,6 +88,8 @@ Agent 获取返回后，应将 `file` 字段中的路径交给基础交互插件
 | `DEFAULT_R18_MODE` | `safe` | WebUI 默认 R18 策略。 |
 | `DEFAULT_INCLUDE_AI` | `false` | WebUI 默认是否允许 AI 作品。 |
 | `PIXIV_REFRESH_TOKEN` | 空 | 可选 secret。填写后优先使用 Pixiv 登录态 App API；留空则使用免登录公开接口。 |
+| `ORIGINAL_ZIP_THRESHOLD_MB` | `20` | `size=original` 且 `delivery=auto` 时，超过该大小会自动打包为 zip。 |
+| `DEFAULT_DELIVERY` | `auto` | 默认交付方式。`auto` 自动判断；`image` 直接交付图片；`zip` 打包为文件。 |
 
 ## 使用示例
 
@@ -111,6 +115,12 @@ pixiv_search_and_fetch(tags=[], uid=123456, count=1)
 
 ```python
 pixiv_search_and_fetch(tags=["風景"], count=1, size="original")
+```
+
+用户必须要原图，但平台图片消息传不过去时，改用 zip 文件交付：
+
+```python
+pixiv_search_and_fetch(tags=["風景"], count=1, size="original", delivery="zip")
 ```
 
 获取 Pixiv 日榜第一：
@@ -187,6 +197,13 @@ plugins/packages/nekro_plugin_pixiv_fetcher/
 - 确认返回路径为 `/app/uploads/<filename>`。
 - 确认发送时使用基础交互插件的 `send_msg_file`。
 - 查看 Nekro Agent 日志中是否有文件路径转换或权限错误。
+
+### 用户必须要原图但平台发不出去
+
+- 不要改发压缩图，也不要偷偷降到 `regular`。
+- 使用 `size="original", delivery="zip"`，让插件把原图打包成 zip 文件路径。
+- 让 Agent 使用 `send_msg_file` 发送这个 zip 文件。这样平台会更倾向于按普通文件处理，避免图片消息压缩、转码或尺寸限制。
+- 如果 zip 文件仍超过平台单文件上限，只能拆分、换文件传输渠道，或让用户通过服务器/对象存储下载；插件不会伪装成已发送成功。
 
 ## 验收标准
 
