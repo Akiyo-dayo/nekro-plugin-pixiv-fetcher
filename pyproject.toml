@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "nekro-plugin-pixiv-fetcher"
+version = "1.0.0"
+description = "Pixiv image search and fetch tool for Nekro Agent"
+authors = ["Akiyo-dayo"]
+readme = "README.md"
+packages = []
+repository = "https://github.com/Akiyo-dayo/nekro-plugin-pixiv-fetcher"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
+nekro-agent = ">=0.9.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 128
+
+[tool.ruff]
+line-length = 128
+select = ["F", "E", "I", "B", "A", "C4", "RET", "SIM", "ARG", "PTH", "RUF"]
+ignore = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
